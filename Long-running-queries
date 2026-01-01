@@ -467,3 +467,33 @@ Then run below find commands to get the traces to upload,
 find -L -name '*.trc' -exec grep -i 'hang analysis' {} \; -print | grep -v -i 'hang analysis' | sort
 find -L -name '*.trc' -exec grep -i 'dump systemstate' {} \; -print | grep 'trc$' | sort
 find -L -name '*.trc' -exec grep 'HM:' {} \; -print | grep -v 'HM:' | grep 'trc$' | sort 
+
+
+*****************************************************************************************************
+AWR DUMP and TFA
+
+*****************************************************************************************************
+
+Provide BOTH an AWR dump & TFA fileset, covering same timeframe, timeframe of issue manifestation ONLY.
+
+→ NOTE: To be extracted FROM A SINGLE NODE ONLY.
+→ IMPORTANT NOTE: When/if compressing files, MAKE SURE ONLY ".zip" extensions are used.
+
+
+-- Create a directory:
+SQL> CREATE DIRECTORY AWR_DATA AS '< path chosen to dump data >';
+Directory created.
+
+Pick the limited/particular timeframe of snap-id's that covers period of slowness manifestation.
+[adding to it couple of hours of operation BEFORE and AFTER issue started, if possible]
+
+SQL> @?/rdbms/admin/awrextr.sql
+
+Compress data, upload to the SR.
+
+---- NOTE ---- Do not forget to limit timeframe by choosing snap-id ranges -- otherwise it'll dump whole AWR data.
+               We just need from the snap-id range when the issue was manifesting.
+
+
+
+$ ./tfactl diagcollect -srdc dbperf -database << database_name >> -from "MMM/dd/yyyy hh:mm:ss" -to "MMM/dd/yyyy hh:mm:ss" 
