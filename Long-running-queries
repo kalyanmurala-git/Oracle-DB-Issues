@@ -423,3 +423,47 @@ Option 4: EXPORT / IMPORT WITH TABLE_EXISTS_ACTION=REPLACE
 ** IMPORT USING TABLE_EXISTS_ACTION=REPLACE
 
 Option 5: Other methods
+
+***********************************************************
+--------------------HA Trace-------------------------
+***********************************************************
+17. Hang Analyze Trace:
+ Connect to any one (not all) RAC instance and execute below.
+
+Copy below commands in a script, and then run the script (instead of running the commands one by one)
+
+Note that, as -g option is used, the traces will be generated on 'all' nodes
+
+sqlplus '/ as sysdba'
+oradebug setmypid
+oradebug unlimit
+oradebug setinst all
+oradebug -g all hanganalyze 3
+oradebug -g all dump systemstate 266
+exec dbms_lock.sleep(60);
+oradebug -g all hanganalyze 3
+oradebug -g all dump systemstate 266
+oradebug tracefile_name
+
+=====
+
+connect / as sysdba
+ oradebug setmypid
+ oradebug unlimit
+ oradebug -g all hanganalyze 3
+ oradebug -g all dump systemstate 258
+ ... wait 2-3 minutes
+ oradebug -g all hanganalyze 3
+ oradebug -g all dump systemstate 258
+ oradebug tracefile_name
+ exit
+
+On ALL nodes, go to the respective directory shown by below query,
+
+select inst_id,value from gv$diag_info where name='ADR Home';
+
+Then run below find commands to get the traces to upload,
+
+find -L -name '*.trc' -exec grep -i 'hang analysis' {} \; -print | grep -v -i 'hang analysis' | sort
+find -L -name '*.trc' -exec grep -i 'dump systemstate' {} \; -print | grep 'trc$' | sort
+find -L -name '*.trc' -exec grep 'HM:' {} \; -print | grep -v 'HM:' | grep 'trc$' | sort 
