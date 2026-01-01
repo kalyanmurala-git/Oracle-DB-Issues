@@ -1,0 +1,106 @@
+---NFS-DNFS
+
+
+19c database have dNFS - (direct NFS) enabled by default which will cause the mentioned error during export.
+
+If you do not plan to use dNFS then you can disable the same. After dNFS is disabled, you will be able to take expdp on NFS mount.
+
+1)Stop the database
+
+$ srvctl stop database -d <db_name>
+
+2)Log in as the Oracle RDBMS installation owner, and disable Direct NFS Client using the following commands ( on all nodes for RAC configuration )
+
+$ cd RDBMS_home/rdbms/lib
+$ make -f ins_rdbms.mk dnfs_off
+
+Enter these commands on each node in the cluster.
+
+3)Start the database
+
+$srvctl start database -d <db_name>
+
+ 
+
+ 
+
+Refer below:
+
+--
+
+EXPDP Fail After Upgrading to 12c Due to DNFS errors ORA-19505, ORA-17503, ORA-17500 (Doc ID 2020371.1)
+
+====================================================================================================================================================================
+if still fails
+    Confirm the DIRECTORY object and privileges
+
+    SQL> select directory_name, directory_path from dba_directories where directory_path like '/u04/onedata/exportDump%';
+    Ensure the DIRECTORY points to /u04/onedata/exportDump and the schema running expdp has READ, WRITE on it:
+    grant read, write on directory <dir_name> to <user>;
+    Avoid using absolute paths directly in DUMPFILE; use DUMPFILE=file.dmp DIRECTORY=<dir_name>.
+
+ 
+
+    OS-level write test as the oracle user
+
+    Verify the path is the NFS mount:
+    mount | grep /u04/onedata/exportDump
+    nfsstat -m | grep -A3 /u04/onedata/exportDump
+    Test space and permissions:
+    df -h /u04/onedata/exportDump
+    touch /u04/onedata/exportDump/.perm_test && echo "ok" > /u04/onedata/exportDump/.write_test && rm -f /u04/onedata/exportDump/.perm_test /u04/onedata/exportDump/.write_test
+    dd if=/dev/zero of=/u04/onedata/exportDump/.dd_test bs=1M count=64 oflag=direct && rm -f /u04/onedata/exportDump/.dd_test
+    If any of these fail, fix ownership/permissions or NFS server export/quotas before retrying expdp.
+
+ 
+
+    File/dir ownership and permissions
+
+    ls -ld /u04/onedata/exportDump
+    Ensure owned by oracle:oinstall (or DB software owner group), and permissions at least 770. The oracle UID/GID must match between DB server and NFS server (or map to a permitted anon user).
+    If the NFS export uses root_squash, that’s fine; ensure non-root oracle user has write perms.
+
+ 
+
+    NFS server free space and quotas
+
+    Check server-side disk space and any user/group quotas for the export path. A quota or out-of-space condition often returns a vague I/O error.
+
+ 
+
+    NFS mount options recommended for Oracle I/O
+    For Data Pump (and generally for Oracle files) use reliable, synchronous-friendly options. Example:
+
+    vers=3,tcp,hard,nointr,rsize=1048576,wsize=1048576,timeo=600,retrans=2,actimeo=0
+    If you’re using kernel NFS for Data Pump only, nolock isn’t typically required, but it’s commonly used for DB files. Ensure consistent options across RAC nodes.
+    Re-mount if needed:
+    umount /u04/onedata/exportDump
+    mount -t nfs -o rw,hard,nointr,tcp,vers=3,rsize=1048576,wsize=1048576,timeo=600,actimeo=0 <nfs-server>:/export/onedata /u04/onedata/exportDump
+
+ 
+
+    Direct NFS (dNFS) vs kernel NFS
+    The “ODM err” suggests dNFS may be active.
+
+    Check if dNFS is in use:
+    SQL> select svrname, dirname, mntpath from v$dnfs_servers;
+    SQL> select * from v$dnfs_channels;
+    If these return rows, dNFS is active. Ensure the NFS server and mount are healthy for dNFS (UID/GID and network). If problems persist only with dNFS, either:
+        Fix the NFS network/export so dNFS I/O works, or
+        Temporarily route Data Pump to kernel NFS by disabling dNFS during a maintenance window (coordinate with your DBA standards). One method is to remove/rename the libodm library link for the instance home and relink; only do this if approved in your environment and revert afterward. Engage your DBA/infra team before changing dNFS settings.
+
+ 
+
+    RAC considerations
+
+    If using PARALLEL>1, ensure the dump directory is accessible and writable from the node(s) running worker processes. Keep the directory mounted with identical options and permissions on all nodes.
+
+ 
+
+    Retry with simple parameters
+
+    Create a clean directory and test small export:
+    create or replace directory EXPDIR as '/u04/onedata/exportDump';
+    grant read, write on directory EXPDIR to <schema>;
+    expdp <schema>/<pwd> directory=EXPDIR dumpfile=test_%U.dmp logfile=test.log parallel=1 filesize=4G content=metadata_only
+    If metadata_only works but a full export fails, suspect quotas, space, or large file support on the NFS server.
